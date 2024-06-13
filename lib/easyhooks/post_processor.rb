@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require 'net/http'
 
 module Easyhooks
@@ -11,12 +12,10 @@ module Easyhooks
         request = create_http_request
         make_request(request)
         trigger_event
-      rescue => e
-        if @action.on_fail.present? && @object.respond_to?(@action.on_fail_callable)
-          @object.send(@action.on_fail_callable, e)
-        else
-          raise e
-        end
+      rescue StandardError => e
+        raise e unless @action.on_fail.present? && @object.respond_to?(@action.on_fail_callable)
+
+        @object.send(@action.on_fail_callable, e)
       end
     end
 
@@ -56,7 +55,7 @@ module Easyhooks
       if json?(data)
         default.merge({ data: JSON.parse(data) }).to_json
       else
-        default.merge({ data: { id: data }}).to_json
+        default.merge({ data: { id: data } }).to_json
       end
     end
 
@@ -67,10 +66,17 @@ module Easyhooks
     end
 
     def create_http_request
-      parsed_url = URI.parse(@action.hook.endpoint)
+      _endpoint = @action.hook.endpoint
+      endpoint = if @object.respond_to?(_endpoint)
+                   @object.send(_endpoint)
+                 else
+                   _endpoint
+                 end
+
+      parsed_url = URI.parse(endpoint)
       host = parsed_url.host
       port = parsed_url.port
-      raise "Unable to load endpoint: #{@action.hook.endpoint}" unless host.present? && port.present?
+      raise "Unable to load endpoint: #{endpoint}" unless host.present? && port.present?
 
       @http = Net::HTTP.new(host, port)
       @http.use_ssl = true if parsed_url.scheme == 'https'
@@ -99,3 +105,4 @@ module Easyhooks
     end
   end
 end
+
